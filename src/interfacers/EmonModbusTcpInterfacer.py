@@ -15,8 +15,16 @@ from emonhub_interfacer import EmonHubInterfacer
 """class EmonModbusTcpInterfacer
 Monitors Modbus devices using modbus tcp
 At this stage, only read_holding_registers() is implemented in the read() method
-if needed, please change the function to read_input_registers()
+for devices working only with integers, please change the function to read_inpu$
 """
+
+def clean(str):
+    if str.find(",")!=-1:
+        str=str[0:str.find(",")]
+    str=str.replace("[","")
+    str=str.replace("]","")
+    str=str.replace("'","")
+    return str
 
 class EmonModbusTcpInterfacer(EmonHubInterfacer):
 
@@ -73,10 +81,9 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
             return c
 
 
-    def read(self):
-        """ Read registers from client"""
+    def _read_node(self,node):
+        """ Read registers from client and create a cargo for the specified node"""
         if pymodbus_found:
-            time.sleep(float(self._settings["interval"]))
             f = []
             c = Cargo.new_cargo(rawdata="")
             # valid datacodes list and number of registers associated
@@ -90,44 +97,67 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
 
             if self._modcon :
                 
-                # fetch nodeid
-                if 'nodeId' in self._settings:
-                    node = str(self._settings["nodeId"])
-                else:
-                    self._log.error("please provide a nodeId")
+                # check if node has a configuration
+                if node not in ehc.nodelist:
+                    self._log.error("node "+node+" not configured")
+                    return
+                if 'rx' not in ehc.nodelist[node]:
+                    self._log.error("no rx section in configuration of node "+node)
                     return
                 
-                # stores registers
-                if 'register' in self._settings:
-                    registers = self._settings["register"]
+                rx=ehc.nodelist[node]['rx']
+                
+                # store names
+                rNames = rx['names']
+                if 'names' in rx:
+                    rNames = rx['names']
+                elif 'name' in rx:
+                    rNames={}
+                    rNames[0] = clean(str(rx['name']))
+                else:
+                    print("please provide a name or a list of names")
+                    return
+                    
+                # fetch registers    
+                if 'registers' in rx:
+                    registers = rx['registers']
+                elif 'register' in rx:
+                    registers = {}
+                    registers[0] = clean(str(rx['register']))
                 else:
                     self._log.error("please provide a register number or a list of registers")
                     return
                 
-                # fetch unitids if present
-                if "nUnit" in self._settings:
-                    UnitIds = self._settings["nUnit"]
-                else:
-                    UnitIds = None
-                
-                
-                # stores names
-                # fetch datacode or datacodes
-                if node in ehc.nodelist and 'rx' in ehc.nodelist[node]:
-                    rNames = ehc.nodelist[node]['rx']['names']
-                    if 'datacode' in ehc.nodelist[node]['rx']:
-                        datacode = ehc.nodelist[node]['rx']['datacode']
-                        datacodes = None
-                    elif 'datacodes' in ehc.nodelist[node]['rx']:
-                        datacodes = ehc.nodelist[node]['rx']['datacodes']
-                    else:
-                        _self._log.error("please provide a datacode or a list of datacodes")
-                        return
-                
                 # check if number of registers and number of names are the same
-                if len(rNames) != len (registers):
+                if len(rNames) != len(registers):
                     self._log.error("You have to define an equal number of registers and of names")
                     return
+                
+                # fetch unitId or unitIds
+                unitIds = None
+                if 'unitIds' in rx:
+                    unitIds = rx['unitIds']
+                elif 'unitId' in rx:
+                    unitId = int(clean(str(rx['unitId'])))
+                else:
+                    unitId=1
+                
+                # check if number of names and number of unitIds are the same
+                if unitIds is not None:
+                    if len(unitIds) != len(rNames):
+                        self._log.error("You are using unitIds. You have to define an equal number of UnitIds and of names")
+                        return
+                
+                # fetch datacode or datacodes
+                datacodes = None
+                if 'datacodes' in rx:
+                    datacodes = rx['datacodes']
+                elif 'datacode' in rx:
+                    datacode = clean(str(rx['datacode']))
+                else:
+                    self._log.error("please provide a datacode or a list of datacodes")
+                    return
+                
                 # check if number of names and number of datacodes are the same
                 if datacodes is not None:
                     if len(datacodes) != len(rNames):
@@ -160,10 +190,10 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
                 # so we can loop and read registers
                 for idx, rName in enumerate(rNames):
                     register = int(registers[idx])
-                    if UnitIds is not None:
-                        unitId = int(UnitIds[idx])
-                    else:
-                        unitId = 1
+                    
+                    if unitIds is not None:
+                        unitId = int(unitIds[idx])
+                    
                     if datacodes is not None:
                         datacode = datacodes[idx]
                     
@@ -204,7 +234,17 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
                             rValD = decoder.decode_64bit_uint()
                         elif datacode == 'd':
                             rValD = decoder.decode_64bit_float()*10
-                        
+                        # some modbus IP gateways (eg Enless) work with radio sensors
+                        # if a rssi is out of range, we could have incoherent values so we drop the whole payload
+                        if rName[0:4] == "RSSI":
+                            if rValD > 1500:
+                                self._log.debug("RSSI out of range" + str(rValD))
+                                return
+                            elif rValD == 0: 
+                                self._log.debug("RSSI null")
+                                return
+                            else:
+                                self._log.debug("RSSI OK")
                         t = ehc.encode(datacode,rValD)
                         f = f + list(t)
                         self._log.debug("Encoded value: " + str(t))
@@ -222,3 +262,36 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
                     self._log.error("incorrect payload size :" + str(len(f)) + " expecting " + str(expectedSize))
                     return
                     
+    def read(self):
+        if 'interval' in self._settings:
+            time.sleep(float(self._settings["interval"]))
+        # fetch nodeid or nodeids
+        if 'nodeIds' in self._settings:
+            nodes = self._settings["nodeIds"]
+            for idx, node in enumerate(nodes):
+                if len(self._settings["pubchannels"]):
+                    # Read the input and process data if available
+                    rxc = self._read_node(node)
+                    if rxc:
+                        rxc = self._process_rx(rxc)
+                        if rxc:
+                            for channel in self._settings["pubchannels"]:
+                                self._log.debug(str(rxc.uri) + " Sent to channel(start)' : " + str(channel))
+                                
+                                # Initialize channel if needed
+                                if not channel in self._pub_channels:
+                                    self._pub_channels[channel] = []
+                                
+                                # Add cargo item to channel
+                                self._pub_channels[channel].append(rxc)
+                                
+                                self._log.debug(str(rxc.uri) + " Sent to channel(end)' : " + str(channel))
+            self._log.debug("all modbus 'simili' nodes processed")
+            return
+        elif 'nodeId' in self._settings:
+            # we have only one node - work will be done by the classic process
+            node = str(self._settings["nodeId"])
+            return self._read_node(node)
+        else:
+            self._log.error("please provide a nodeId or a list of nodeIds")
+            return 
