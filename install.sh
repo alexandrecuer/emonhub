@@ -52,6 +52,7 @@ if [ ! -f /etc/emonhub/emonhub.conf ]; then
     # Temporary: replace with update to default settings file
     sed -i "s/loglevel = DEBUG/loglevel = WARNING/" /etc/emonhub/emonhub.conf
 fi
+sudo chmod 666 /etc/emonhub/emonhub.conf
 
 # ---------------------------------------------------------
 # Install service
