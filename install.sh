@@ -71,3 +71,15 @@ sudo systemctl restart emonhub.service
 state=$(systemctl show emonhub | grep ActiveState)
 echo "- Service $state"
 # ---------------------------------------------------------
+# Instal pymodbus
+# ---------------------------------------------------------
+echo "- instaling pymodbus"
+
+sudo apt-get install python-dev
+cd /
+sudo git clone https://github.com/riptideio/pymodbus
+cd pymodbus
+sudo python setup.py install
+# ---------------------------------------------------------
+
+
