@@ -54,6 +54,14 @@ if [ ! -f /etc/emonhub/emonhub.conf ]; then
 fi
 sudo chmod 666 /etc/emonhub/emonhub.conf
 
+#----------------
+# restart.log
+#----------------
+if [ ! -f /var/log/emonhub/restart.log ]; then
+    sudo touch restart.log
+    sudo chown pi:pi restart.log
+fi
+
 # ---------------------------------------------------------
 # Install service
 # ---------------------------------------------------------
