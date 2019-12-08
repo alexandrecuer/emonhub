@@ -57,9 +57,10 @@ sudo chmod 666 /etc/emonhub/emonhub.conf
 #----------------
 # restart.log
 #----------------
-if [ ! -f /var/log/emonhub/restart.log ]; then
-    sudo touch restart.log
-    sudo chown pi:pi restart.log
+logdir=/var/log/emonhub
+if [ ! -f $logdir/restart.log ]; then
+    sudo touch $logdir/restart.log
+    sudo chown pi:pi $logdir/restart.log
 fi
 
 # ---------------------------------------------------------
