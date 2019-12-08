@@ -54,15 +54,6 @@ if [ ! -f /etc/emonhub/emonhub.conf ]; then
 fi
 sudo chmod 666 /etc/emonhub/emonhub.conf
 
-#----------------
-# restart.log
-#----------------
-logdir=/var/log/emonhub
-if [ ! -f $logdir/restart.log ]; then
-    sudo touch $logdir/restart.log
-    sudo chown pi:pi $logdir/restart.log
-fi
-
 # ---------------------------------------------------------
 # Install service
 # ---------------------------------------------------------
@@ -79,6 +70,16 @@ sudo systemctl restart emonhub.service
 
 state=$(systemctl show emonhub | grep ActiveState)
 echo "- Service $state"
+
+#----------------
+# restart.log
+#----------------
+logdir=/var/log/emonhub
+if [ ! -f $logdir/restart.log ]; then
+    sudo touch $logdir/restart.log
+    sudo chown pi:pi $logdir/restart.log
+fi
+
 # ---------------------------------------------------------
 # Instal pymodbus
 # ---------------------------------------------------------
