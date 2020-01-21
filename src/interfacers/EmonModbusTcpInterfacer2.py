@@ -12,44 +12,58 @@ except ImportError:
 import emonhub_coder as ehc
 from emonhub_interfacer import EmonHubInterfacer
 
-"""class EmonModbusTcpInterfacer
+"""class EmonModbusTcpInterfacer2
 Monitors Modbus devices using modbus tcp
-At this stage, only read_holding_registers() is implemented in the read() method
-for devices working only with integers, please change the function to read_inpu$
+Implements 2 modbus functions : read_holding_registers (code x03) and read_input_registers (code x04)
+To switch from function x03 to x04, just add fCode=4 in the section [[[init_settings]]] of the interfacer
 """
 
-def clean(str):
-    if str.find(",")!=-1:
-        str=str[0:str.find(",")]
-    str=str.replace("[","")
-    str=str.replace("]","")
-    str=str.replace("'","")
-    return str
+class EmonModbusTcpInterfacer2(EmonHubInterfacer):
 
-class EmonModbusTcpInterfacer(EmonHubInterfacer):
-
-    def __init__(self, name, modbus_IP='192.168.1.10', modbus_port=0):
+    def __init__(self, name, modbus_IP='192.168.1.10', modbus_port=0, fCode=3):
         """Initialize Interfacer
-        com_port (string): path to COM port
+        com_port and fCode
         """
 
         # Initialization
-        super(EmonModbusTcpInterfacer, self).__init__(name)
-
+        super(EmonModbusTcpInterfacer2, self).__init__(name)
+        
         if not pymodbus_found:
             self._log.error("PYMODBUS NOT PRESENT BUT NEEDED !!")
         # open connection
         if pymodbus_found:
             self._log.info("pymodbus installed")
-            self._log.debug("EmonModbusTcpInterfacer args: " + str(modbus_IP) + " - " + str(modbus_port) )
+            self._log.debug("EmonModbusTcpInterfacer2 args: " + str(modbus_IP) + " - " + str(modbus_port))
             self._con = self._open_modTCP(modbus_IP,modbus_port)
             if self._modcon :
                  self._log.info("Modbustcp client Connected")
             else:
                  self._log.info("Connection to ModbusTCP client failed. Will try again")
 
-    def set(self, **kwargs):
+    # config check given a suffix
+    def _check(self,node,suffix):
+        # ehc.nodelist is a json object containing all datas from the [nodes] section of the emonhub.conf file
+        if ehc.nodelist[node]['rx'] is None:
+          self._log.error("!!!!!!!!!!!!!!!!!!!!!missing rx section in the node")
+          return []
+        else:
+          rx=ehc.nodelist[node]['rx']
+        if suffix+'s' in rx:
+            what = rx[suffix+'s']
+        elif suffix in rx:
+            what = rx[suffix]
+        else:
+            self._log.debug("please provide a "+suffix+" or a list of "+suffix+"s")
+            return []
+        result=[]
+        if type(what) is list:
+            result = what
+        else:
+            result.append(str(what))
+        return result
 
+    def set(self, **kwargs):
+        
         for key in kwargs.keys():
             setting = kwargs[key]
             self._settings[key] = setting
@@ -59,8 +73,8 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
 
         # Close TCP connection
         if self._con is not None:
-            self._log.debug("Closing tcp port")
-        self._con.close()
+            self._log.info("Closing tcp port")
+            self._con.close()
 
     def _open_modTCP(self,modbus_IP,modbus_port):
         """ Open connection to modbus device """
@@ -70,12 +84,17 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
             if c.connect():
                 self._log.info("Opening modbusTCP connection: " + str(modbus_port) + " @ " +str(modbus_IP))
                 self._modcon = True
+                self._rNames = {}
+                self._datacodes = {}
+                self._registers = {}
+                self._unitIds = {}
+                self._expectedSize = {}
             else:
                 self._log.debug("Connection failed")
                 self._modcon = False
         except Exception as e:
             self._log.error("modbusTCP connection failed" + str(e))
-           #raise EmonHubInterfacerInitError('Could not open connection to host %s' %modbus_IP)
+            #raise EmonHubInterfacerInitError('Could not open connection to host %s' %modbus_IP)
             pass
         else:
             return c
@@ -86,123 +105,113 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
         if pymodbus_found:
             f = []
             c = Cargo.new_cargo(rawdata="")
+            # check if node has a configuration
+            if node not in ehc.nodelist:
+                self._log.error("node "+node+" not configured")
+                return
             # valid datacodes list and number of registers associated
             # in modbus protocol, one register is 16 bits or 2 bytes
             valid_datacodes = ({'h': 1, 'H': 1, 'i': 2, 'l': 2, 'I': 2, 'L': 2, 'f': 2, 'q': 4, 'Q': 4, 'd': 4})
             
+            # connection is not opened
             if not self._modcon :
                 self._con.close()
                 self._log.info("Not connected, retrying connect" + str(self.init_settings))
                 self._con = self._open_modTCP(self.init_settings["modbus_IP"],self.init_settings["modbus_port"])
-
-            if self._modcon :
-                
-                # check if node has a configuration
-                if node not in ehc.nodelist:
-                    self._log.error("node "+node+" not configured")
+            
+            # connection is opened but the node config has not been checked
+            if self._modcon and node not in self._rNames :
+                self._log.info("[node"+node+"]"+"*********checking the config***********")
+                # create the lists
+                # if one is missing, then datas reading will not be done
+                rNames=self._check(node,'name')
+                registers=self._check(node,'register')
+                datacodes=self._check(node,'datacode')
+                ln=len(rNames)
+                lr=len(registers)
+                ld=len(datacodes)
+                # we can have the same datacode for all the registers 
+                if ld == 1:
+                    lmin=min(ln,lr)
+                else:
+                    lmin=lmin=min(ln,lr,ld)
+                if lmin==0:
+                    self._log.error("PLEASE REVIEW YOUR NODE "+node+" CONFIGURATION")
                     return
-                if 'rx' not in ehc.nodelist[node]:
-                    self._log.error("no rx section in configuration of node "+node)
-                    return
-                
+                del(rNames[lmin:ln])
+                del(registers[lmin:lr])
+                if ld > 1:
+                    del(datacodes[lmin:ld])
+                # at this stage, we know that rx section exists 
                 rx=ehc.nodelist[node]['rx']
-                
-                # store names
-                rNames = rx['names']
-                if 'names' in rx:
-                    rNames = rx['names']
-                elif 'name' in rx:
-                    rNames={}
-                    rNames[0] = clean(str(rx['name']))
-                else:
-                    print("please provide a name or a list of names")
-                    return
-                    
-                # fetch registers    
-                if 'registers' in rx:
-                    registers = rx['registers']
-                elif 'register' in rx:
-                    registers = {}
-                    registers[0] = clean(str(rx['register']))
-                else:
-                    self._log.error("please provide a register number or a list of registers")
-                    return
-                
-                # check if number of registers and number of names are the same
-                if len(rNames) != len(registers):
-                    self._log.error("You have to define an equal number of registers and of names")
-                    return
-                
-                # fetch unitId or unitIds
-                unitIds = None
-                if 'unitIds' in rx:
-                    unitIds = rx['unitIds']
-                elif 'unitId' in rx:
-                    unitId = int(clean(str(rx['unitId'])))
-                else:
-                    unitId=1
-                
+                # generate list of unitIds
+                # if nothing is provided, we assume we have to interrogate slave 1
+                unitIds =self._check(node,'unitId')
+                if unitIds==[]:
+                    unitIds.append("1")
                 # check if number of names and number of unitIds are the same
-                if unitIds is not None:
-                    if len(unitIds) != len(rNames):
-                        self._log.error("You are using unitIds. You have to define an equal number of UnitIds and of names")
-                        return
-                
-                # fetch datacode or datacodes
-                datacodes = None
-                if 'datacodes' in rx:
-                    datacodes = rx['datacodes']
-                elif 'datacode' in rx:
-                    datacode = clean(str(rx['datacode']))
-                else:
-                    self._log.error("please provide a datacode or a list of datacodes")
+                if len(unitIds)> 1 and len(unitIds) != len(rNames):
+                    self._log.error("You are using unitIds. You have to define an equal number of UnitIds and of names")
                     return
-                
-                # check if number of names and number of datacodes are the same
-                if datacodes is not None:
-                    if len(datacodes) != len(rNames):
-                        self._log.error("You are using datacodes. You have to define an equal number of datacodes and of names")
-                        return
                 
                 # calculate expected size in bytes and search for invalid datacode(s) 
                 expectedSize=0
-                if datacodes is not None:
+                if len(datacodes)==1:
+                    if datacodes[0] not in valid_datacodes:
+                        self._log.error("-" * 46)
+                        self._log.error("invalid datacode")
+                        self._log.error("-" * 46)
+                        return
+                    else:
+                        expectedSize=len(rNames)*valid_datacodes[datacodes[0]]*2
+                else:
                     for code in datacodes:
                         if code not in valid_datacodes:
-                            self._log.debug("-" * 46)
-                            self._log.debug("invalid datacode")
-                            self._log.debug("-" * 46)
+                            self._log.error("-" * 46)
+                            self._log.error("invalid datacode")
+                            self._log.error("-" * 46)
                             return
                         else:
                             expectedSize+=valid_datacodes[code]*2
-                else:
-                    if datacode not in valid_datacodes:
-                        self._log.debug("-" * 46)
-                        self._log.debug("invalid datacode")
-                        self._log.debug("-" * 46)
-                        return
-                    else:
-                        expectedSize=len(rNames)*valid_datacodes[datacode]*2
-                
-                self._log.debug("expected bytes number after encoding: "+str(expectedSize))
-                
-                # at this stage, we don't have any invalid datacode(s)
+                self._rNames[node]=rNames
+                self._registers[node]=registers
+                self._datacodes[node]=datacodes
+                self._unitIds[node]=unitIds
+                self._expectedSize[node]=expectedSize
+                # just for debug
+                self._log.info(self._rNames[node])
+                self._log.info(self._registers[node])
+                self._log.info(self._datacodes[node])
+                self._log.info(self._unitIds[node])
+                self._log.info("[node"+node+"]"+"expected bytes number after encoding: "+str(self._expectedSize[node]))
+                self._log.info("[node"+node+"]"+"*********config validated with success***********")
+
+            # connection is opened, node config is valid and stored and we don't have any invalid datacode(s)
+            if self._modcon and node in self._rNames:
                 # so we can loop and read registers
-                for idx, rName in enumerate(rNames):
-                    register = int(registers[idx])
+                for idx, rName in enumerate(self._rNames[node]):
+                    register = int(self._registers[node][idx])
                     
-                    if unitIds is not None:
-                        unitId = int(unitIds[idx])
+                    if len(self._unitIds[node]) > 1:
+                        unitId = int(self._unitIds[node][idx])
+                    else:
+                        unitId = int(self._unitIds[node][0])
                     
-                    if datacodes is not None:
-                        datacode = datacodes[idx]
+                    if len(self._datacodes[node]) > 1:
+                        datacode = self._datacodes[node][idx]
+                    else:
+                        datacode = self._datacodes[node][0]
                     
                     self._log.debug("datacode " + datacode)
                     qty = valid_datacodes[datacode]
                     self._log.debug("reading register # :" + str(register) + ", qty #: " + str(qty) + ", unit #: " + str(unitId))
                         
                     try:
-                        self.rVal = self._con.read_holding_registers(register-1,qty,unit=unitId)
+                        if self._fCode==3:
+                            self.rVal = self._con.read_holding_registers(register-1,qty,unit=unitId)
+                        elif self._fCode==4:
+                            self._log.info("we are reading input registers")
+                            self.rVal = self._con.read_input_registers(register-1,qty,unit=unitId)
                         assert(self.rVal.function_code < 0x80)
                     except Exception as e:
                         self._log.error("Connection failed on read of register: " +str(register) + " : " + str(e))
@@ -251,7 +260,7 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
                         self._log.debug("value: " + str(rValD))
                 
                 #test if payload length is OK
-                if len(f) == expectedSize:
+                if len(f) == self._expectedSize[node]:
                     self._log.debug("payload size OK (" + str(len(f)) +")")
                     self._log.debug("reporting data: " + str(f))
                     c.nodeid = node
@@ -259,12 +268,21 @@ class EmonModbusTcpInterfacer(EmonHubInterfacer):
                     self._log.debug("Return from read data: " + str(c.realdata))
                     return c
                 else:
-                    self._log.error("incorrect payload size :" + str(len(f)) + " expecting " + str(expectedSize))
+                    self._log.error("incorrect payload size :" + str(len(f)) + " expecting " + str(self._expectedSize[node]))
                     return
                     
     def read(self):
         if 'interval' in self._settings:
             time.sleep(float(self._settings["interval"]))
+        # before the  config check for node(s), we fix the function code to 3 by default
+        # if the user has defined something in the interfacer section, we modify fCode 
+        # right now, we only accept fCode=3 and fCode=4
+        if self._rNames == {} :
+            self._fCode = 3
+            if "fCode" in self.init_settings and int(self.init_settings["fCode"])==4 :
+               self._fCode=4
+            self._log.info("Using the modbus function code "+str(self._fCode))
+        
         # fetch nodeid or nodeids
         if 'nodeIds' in self._settings:
             nodes = self._settings["nodeIds"]
