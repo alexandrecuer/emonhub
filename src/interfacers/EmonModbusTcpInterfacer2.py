@@ -26,7 +26,7 @@ class EmonModbusTcpInterfacer2(EmonHubInterfacer):
         """
 
         # Initialization
-        super(EmonModbusTcpInterfacer2, self).__init__(name)
+        super().__init__(name)
         
         if not pymodbus_found:
             self._log.error("PYMODBUS NOT PRESENT BUT NEEDED !!")
@@ -64,7 +64,7 @@ class EmonModbusTcpInterfacer2(EmonHubInterfacer):
 
     def set(self, **kwargs):
         
-        for key in kwargs.keys():
+        for key in kwargs:
             setting = kwargs[key]
             self._settings[key] = setting
             self._log.debug("Setting " + self.name + " %s: %s" % (key, setting) )

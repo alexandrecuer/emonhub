@@ -16,7 +16,7 @@ class EmonHiokiTcpInterfacer(EmonHubInterfacer):
 
     # Initialization
     def __init__(self, name, IP="192.168.1.11", port=8802):
-        super(EmonHiokiTcpInterfacer, self).__init__(name)
+        super().__init__(name)
         self._con = self._open_socket(IP,port)
         self._rNames = []
         if self._sopen :
@@ -56,7 +56,7 @@ class EmonHiokiTcpInterfacer(EmonHubInterfacer):
     # read the runtime_settings from the interfacer section and store them in self._settings
     # they are  pubchannels, nodeId(s), interval
     def set(self, **kwargs):
-        for key in kwargs.keys():
+        for key in kwargs:
             setting = kwargs[key]
             self._settings[key] = setting
             self._log.debug("Setting " + self.name + " %s: %s" % (key, setting) )
