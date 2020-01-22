@@ -80,11 +80,13 @@ echo "- Service $state"
 # ---------------------------------------------------------
 # Instal pymodbus
 # ---------------------------------------------------------
-echo "- instaling pymodbus"
+echo "- installing pymodbus"
+sudo pip3 install -U pymodbus
 
-sudo apt-get install python-dev
-cd /
-sudo git clone https://github.com/riptideio/pymodbus
-cd pymodbus
-sudo python setup.py install
+# DEPRECATED
+#sudo apt-get install python-dev
+#cd /
+#sudo git clone https://github.com/riptideio/pymodbus
+#cd pymodbus
+#sudo python setup.py install
 # ---------------------------------------------------------
