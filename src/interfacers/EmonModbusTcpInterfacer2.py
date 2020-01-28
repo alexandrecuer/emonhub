@@ -277,9 +277,6 @@ class EmonModbusTcpInterfacer2(EmonHubInterfacer):
         # before the  config check for node(s), we fix the function code to 3 by default
         # if the user has defined something in the interfacer section, we modify fCode 
         # right now, we only accept fCode=3 and fCode=4
-        if not self._modcon :
-            self._log.error("modbus device is not available - aborting")
-            return
         if self._rNames == {} :
             self._fCode = 3
             if "fCode" in self.init_settings and int(self.init_settings["fCode"])==4 :
