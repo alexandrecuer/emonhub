@@ -82,8 +82,8 @@ echo "- Service $state"
 # ---------------------------------------------------------
 # Instal pymodbus
 # ---------------------------------------------------------
-echo "- installing pymodbus"
-sudo pip3 install -U pymodbus
+#echo "- installing pymodbus"
+#sudo pip3 install -U pymodbus
 
 # DEPRECATED
 #sudo apt-get install python-dev
