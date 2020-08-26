@@ -81,7 +81,7 @@ class SMABluetoothPacket:
             self.UnescapedArray.append(value)
 
     def sendPacket(self, btSocket):
-        return btSocket.send(str(self.header) + str(self.SourceAddress) + str(self.DestinationAddress) + str(self.cmdcode) + str(self.RawByteArray))
+        return btSocket.send(bytes(self.header + self.SourceAddress + self.DestinationAddress + self.cmdcode + self.RawByteArray))
 
     def containsLevel2Packet(self):
         return (len(self.UnescapedArray) >= 5 and
@@ -95,7 +95,9 @@ class SMABluetoothPacket:
         return self.cmdcode[0] + (self.cmdcode[1] << 8)
 
     def setCommandCode(self, byteone, bytetwo):
-        self.cmdcode = bytearray([byteone, bytetwo])
+        self.cmdcode = bytearray()
+        self.cmdcode.append(byteone)
+        self.cmdcode.append(bytetwo)
 
     def getByte(self, indexfromstartofdatapayload):
         return self.UnescapedArray[indexfromstartofdatapayload]
@@ -123,7 +125,6 @@ class SMABluetoothPacket:
         self.headerlength = 18
         self.SourceAddress = SourceAddress
         self.DestinationAddress = DestinationAddress
-
         self.header = bytearray([0x7e, length1, length2, checksum])
 
         # Create our array to hold the payload bytes

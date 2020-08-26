@@ -12,6 +12,7 @@ except ImportError:
 
 import time
 import sys
+import subprocess
 import traceback
 import re
 import Cargo
@@ -35,9 +36,12 @@ class EmonHubSMASolarInterfacer(EmonHubInterfacer):
         self._inverterpincode = inverterpincode
         self._port = 1
         self._nodeid = int(nodeid)
+        self._btRetrySleepTime = 10
+        self.no_bluetooth_reported = False
 
         self._packettrace = bool(packettrace)
 
+        # seems a hack & needs explaining why we need this
         self.MySerialNumber = bytearray([0x08, 0x00, 0xaa, 0xbb, 0xcc, 0xdd])
 
         self._reset_packet_send_counter()
@@ -116,20 +120,26 @@ class EmonHubSMASolarInterfacer(EmonHubInterfacer):
         inverteraddress (string): bluetooth address for inverter
 
         """
-        try:
-            self._log.info("Opening bluetooth address " + str(inverteraddress))
-            btSocket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-            # Connect
-            btSocket.connect((inverteraddress, port))
-            # Give BT 10 seconds to timeout so we don't hang and wait forever
-            btSocket.settimeout(10)
+        for retry_attempt in range(3):
+            try:
+                self._log.info("Opening bluetooth address " + str(inverteraddress))
+                btSocket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+                # Connect
+                btSocket.connect((inverteraddress, port))
+                # Give BT 10 seconds to timeout so we don't hang and wait forever
+                btSocket.settimeout(10)
 
-        except bluetooth.btcommon.BluetoothError as err:
-            self._log.error(err)
-            self._log.error('Bluetooth error while connecting to %s' % inverteraddress)
+            except bluetooth.btcommon.BluetoothError as err:
+                self._log.error(err)
+                self._log.error('Bluetooth error while connecting to %s' % inverteraddress)
+                btSocket.close()
+                errCode = eval(err[0])[0]
+                if errCode == 16 or errCode == 115:
+                    # We need to reset the bluetooth connection
+                    self._reset_bluetooth()
 
-        else:
-            return btSocket
+            else:
+                return btSocket
 
     def _reset_packet_send_counter(self):
         """Reset the internal sequence number in SMA Packets"""
@@ -173,6 +183,12 @@ class EmonHubSMASolarInterfacer(EmonHubInterfacer):
         """Reset timer to current date/time"""
         self._last_time_auto_disconnect = time.time()
 
+    def _reset_bluetooth(self):
+        subprocess.call(['sudo', 'systemctl', 'restart', 'bluetooth'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.STDOUT)
+        self._log.warning('Bluetooth processes restarted - not responding')
+
     #Override base _process_rx code from emonhub_interfacer
     def _process_rx(self, rxc):
         if not rxc:
@@ -184,6 +200,9 @@ class EmonHubSMASolarInterfacer(EmonHubInterfacer):
     def read(self):
         """Read data from inverter and process"""
         if not bluetooth_found:
+            if not self.no_bluetooth_reported:
+                self._log.warning('Bluetooth not available...')
+                self.no_bluetooth_reported = True
             return False
 
         #Wait until we are ready to read from inverter
