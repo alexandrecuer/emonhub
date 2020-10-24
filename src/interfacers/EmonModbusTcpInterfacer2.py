@@ -247,10 +247,10 @@ class EmonModbusTcpInterfacer2(EmonHubInterfacer):
                         # if a rssi is out of range, we could have incoherent values so we drop the whole payload
                         if rName[0:4] == "RSSI":
                             if rValD > 1500:
-                                self._log.debug("RSSI out of range" + str(rValD))
+                                self._log.warning("RSSI out of range" + str(rValD))
                                 return
                             elif rValD == 0: 
-                                self._log.debug("RSSI null")
+                                self._log.warning("RSSI null")
                                 return
                             else:
                                 self._log.debug("RSSI OK")
